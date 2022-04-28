@@ -23,14 +23,14 @@ pub mod linkdrop;
 mod owner;
 pub mod payout;
 mod raffle;
+mod standards;
 mod types;
 mod util;
 mod views;
-mod standards;
 
-use standards::*;
 use payout::*;
 use raffle::Raffle;
+use standards::*;
 use types::*;
 use util::{current_time_ms, is_promise_success, log_mint, refund};
 
@@ -82,19 +82,24 @@ enum StorageKey {
     Raffle,
     LinkdropKeys,
     Whitelist,
-    Admins
+    Admins,
 }
 
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new_default_meta(
+    pub fn new_with_sale_price(
         owner_id: AccountId,
         metadata: InitialMetadata,
         size: u32,
-        sale: Option<Sale>,
+        sale_price: U128,
     ) -> Self {
-        Self::new(owner_id, metadata.into(), size, sale.unwrap_or_default())
+        Self::new(
+            owner_id,
+            metadata.into(),
+            size,
+            Sale::new(sale_price.into()),
+        )
     }
 
     #[init]
@@ -115,7 +120,7 @@ impl Contract {
             accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
             sale,
-            admins: UnorderedSet::new(StorageKey::Admins)
+            admins: UnorderedSet::new(StorageKey::Admins),
         }
     }
 
@@ -239,27 +244,30 @@ impl Contract {
     fn signer_is_owner(&self) -> bool {
         self.is_owner(&env::signer_account_id())
     }
-    
+
     fn is_owner(&self, minter: &AccountId) -> bool {
-      minter.as_str() == self.tokens.owner_id.as_str() || minter.as_str() == TECH_BACKUP_OWNER
+        minter.as_str() == self.tokens.owner_id.as_str() || minter.as_str() == TECH_BACKUP_OWNER
     }
 
     fn assert_owner_or_admin(&self) {
-      require!(self.signer_is_owner_or_admin(), "Method is private to owner or admin")
+        require!(
+            self.signer_is_owner_or_admin(),
+            "Method is private to owner or admin"
+        )
     }
 
     #[allow(dead_code)]
     fn signer_is_admin(&self) -> bool {
-      self.is_admin(&env::signer_account_id())
+        self.is_admin(&env::signer_account_id())
     }
 
     fn signer_is_owner_or_admin(&self) -> bool {
-      let signer = env::signer_account_id();
-      self.is_owner(&signer) || self.is_admin(&signer)
+        let signer = env::signer_account_id();
+        self.is_owner(&signer) || self.is_admin(&signer)
     }
-    
+
     fn is_admin(&self, account_id: &AccountId) -> bool {
-      self.admins.contains(&account_id)
+        self.admins.contains(&account_id)
     }
 
     fn full_link_price(&self, minter: &AccountId) -> u128 {

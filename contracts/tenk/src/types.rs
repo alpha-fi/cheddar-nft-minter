@@ -54,10 +54,10 @@ pub struct Sale {
     pub mint_rate_limit: Option<u32>,
 }
 
-impl Default for Sale {
-    fn default() -> Self {
+impl Sale {
+    pub fn new(price: u128) -> Self {
         Self {
-            price: U128(0),
+            price: U128(price),
             // ..Default::default()
             royalties: Default::default(),
             initial_royalties: Default::default(),
@@ -68,9 +68,7 @@ impl Default for Sale {
             mint_rate_limit: Some(10),
         }
     }
-}
 
-impl Sale {
     pub fn validate(&self) {
         if let Some(r) = self.royalties.as_ref() {
             r.validate()
@@ -124,7 +122,6 @@ pub struct SaleInfo {
     pub price: U128,
 }
 
-
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
@@ -146,23 +143,17 @@ mod tests {
     }
 
     fn new_contract() -> Contract {
-        Contract::new_default_meta(
+        Contract::new_with_sale_price(
             AccountId::new_unchecked("root".to_string()),
             initial_metadata(),
             10_000,
-            Some(Sale {
-                price: TEN.into(),
-                ..Default::default()
-            }),
+            TEN.into(),
         )
     }
 
     #[test]
     fn check_price() {
         let contract = new_contract();
-        assert_eq!(
-            contract.cost_per_token(&account()).0,
-            TEN
-        );
+        assert_eq!(contract.cost_per_token(&account()).0, TEN);
     }
 }
