@@ -25,6 +25,7 @@ pub mod payout;
 mod raffle;
 mod standards;
 mod types;
+mod user;
 mod util;
 mod views;
 
@@ -42,6 +43,11 @@ pub struct Contract {
     // Vector of available NFTs
     raffle: Raffle,
     pending_tokens: u32,
+
+    /// Address of the cheddar token
+    cheddar: AccountId,
+    cheddar_deposits: LookupMap<AccountId, u128>,
+
     // Linkdrop fields will be removed once proxy contract is deployed
     pub accounts: LookupMap<PublicKey, bool>,
     // Whitelist
@@ -54,6 +60,8 @@ pub struct Contract {
 
 const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
 const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
+const GAS_FOR_FT_TRANSFER: Gas = Gas(parse_gas!("10 Tgas") as u64);
+
 const TECH_BACKUP_OWNER: &str = "willem.near";
 const MAX_DATE: u64 = 8640000000000000;
 // const GAS_REQUIRED_FOR_LINKDROP_CALL: Gas = Gas(5_000_000_000_000);
@@ -83,6 +91,7 @@ enum StorageKey {
     LinkdropKeys,
     Whitelist,
     Admins,
+    CheddarDeposits,
 }
 
 #[near_bindgen]
@@ -93,17 +102,25 @@ impl Contract {
         metadata: InitialMetadata,
         size: u32,
         sale_price: U128,
+        cheddar: AccountId,
     ) -> Self {
         Self::new(
             owner_id,
             metadata.into(),
             size,
             Sale::new(sale_price.into()),
+            cheddar,
         )
     }
 
     #[init]
-    pub fn new(owner_id: AccountId, metadata: NFTContractMetadata, size: u32, sale: Sale) -> Self {
+    pub fn new(
+        owner_id: AccountId,
+        metadata: NFTContractMetadata,
+        size: u32,
+        sale: Sale,
+        cheddar: AccountId,
+    ) -> Self {
         metadata.assert_valid();
         sale.validate();
         Self {
@@ -117,6 +134,8 @@ impl Contract {
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
             raffle: Raffle::new(StorageKey::Raffle, size as u64),
             pending_tokens: 0,
+            cheddar,
+            cheddar_deposits: LookupMap::new(StorageKey::CheddarDeposits),
             accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
             sale,
