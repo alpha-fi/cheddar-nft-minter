@@ -1,7 +1,8 @@
-use near_contract_standards::non_fungible_token::{Token, events::NftMint};
+use near_contract_standards::non_fungible_token::{events::NftMint, Token};
 use near_sdk::{env, AccountId, Promise, PromiseResult};
 
 use crate::TimestampMs;
+
 pub fn is_promise_success(num_of_promises: Option<u64>) -> bool {
     let count = env::promise_results_count();
     if num_of_promises.map_or(false, |num| num != count) {

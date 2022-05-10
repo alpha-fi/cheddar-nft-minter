@@ -47,9 +47,10 @@ pub struct Contract {
     /// Address of the cheddar token
     cheddar: AccountId,
     cheddar_deposits: LookupMap<AccountId, u128>,
-    /// price of cheddar in NEAR:
-    /// amount of cheddar = (amount_near / 1e9) * cheddar_price;
-    cheddar_price: u128,
+    /// cheddar to near convertion expressed in 1e6, including the boost:
+    /// amount of near = (amount_cheddar / 1e6) * cheddar_near;
+    cheddar_near: u128,
+    cheddar_boost: u32,
 
     // Linkdrop fields will be removed once proxy contract is deployed
     pub accounts: LookupMap<PublicKey, bool>,
@@ -106,7 +107,8 @@ impl Contract {
         size: u32,
         sale_price: U128,
         cheddar: AccountId,
-        cheddar_price: U128,
+        cheddar_near: u32,
+        cheddar_boost: u32,
     ) -> Self {
         Self::new(
             owner_id,
@@ -114,10 +116,13 @@ impl Contract {
             size,
             Sale::new(sale_price.into()),
             cheddar,
-            cheddar_price,
+            cheddar_near,
+            cheddar_boost,
         )
     }
 
+    /// cheddar to near convertion expressed in 1e6, excluding the boost:
+    /// amount of near = (amount_cheddar / 1e6) * cheddar_near * (100+boost)/100
     #[init]
     pub fn new(
         owner_id: AccountId,
@@ -125,10 +130,13 @@ impl Contract {
         size: u32,
         sale: Sale,
         cheddar: AccountId,
-        cheddar_price: U128,
+        cheddar_near: u32,
+        cheddar_boost: u32,
     ) -> Self {
         metadata.assert_valid();
         sale.validate();
+        require!(cheddar_boost < 100, "cheddar boos can't be more than 100%");
+        let price = cheddar_near * (100 + cheddar_boost) / 100;
         Self {
             tokens: NonFungibleToken::new(
                 StorageKey::NonFungibleToken,
@@ -141,7 +149,8 @@ impl Contract {
             raffle: Raffle::new(StorageKey::Raffle, size as u64),
             pending_tokens: 0,
             cheddar,
-            cheddar_price: cheddar_price.into(),
+            cheddar_near: price.into(),
+            cheddar_boost,
             cheddar_deposits: LookupMap::new(StorageKey::CheddarDeposits),
             accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
@@ -161,7 +170,7 @@ impl Contract {
             require!(num <= limit, "over mint limit");
         }
         let owner_id = &env::signer_account_id();
-        let num = self.assert_can_mint(owner_id, num);
+        let num = self.assert_can_mint(owner_id, num, with_cheddar);
         let tokens = self.nft_mint_many_ungaurded(num, owner_id, false);
         self.use_whitelist_allowance(owner_id, num);
         tokens
@@ -201,6 +210,15 @@ impl Contract {
         tokens
     }
 
+    // admin methods
+
+    /// update the boost.
+    pub fn admin_update_price(&mut self, price: u32) {
+        self.assert_owner_or_admin();
+        require!(price > 0, "price must be positive");
+        self.cheddar_near = (price * (100 + self.cheddar_boost) / 100).into();
+    }
+
     // Contract private methods
 
     #[private]
@@ -227,14 +245,19 @@ impl Contract {
     }
 
     // Private methods
-    fn assert_deposit(&self, num: u32, account_id: &AccountId) {
+    fn assert_deposit(&self, num: u32, account_id: &AccountId, with_cheddar: bool) {
+        let deposit = if !with_cheddar {
+            env::attached_deposit()
+        } else {
+            self.cheddar_to_near(account_id)
+        };
         require!(
-            env::attached_deposit() >= self.total_cost(num, account_id).0,
+            deposit >= self.total_cost(num, account_id).0,
             "Not enough attached deposit to buy"
         );
     }
 
-    fn assert_can_mint(&mut self, account_id: &AccountId, num: u32) -> u32 {
+    fn assert_can_mint(&mut self, account_id: &AccountId, num: u32, with_cheddar: bool) -> u32 {
         let mut num = num;
         // Check quantity
         // Owner can mint for free
@@ -253,7 +276,7 @@ impl Contract {
             left >= num,
             format!("Not NFTs left to mint, remaining nfts: {}", left)
         );
-        self.assert_deposit(num, account_id);
+        self.assert_deposit(num, account_id, with_cheddar);
         num
     }
 

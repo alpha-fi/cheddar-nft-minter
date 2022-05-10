@@ -29,7 +29,7 @@ impl Contract {
     pub fn create_linkdrop(&mut self, public_key: PublicKey) -> Promise {
         let deposit = env::attached_deposit();
         let account = &env::predecessor_account_id();
-        self.assert_can_mint(account, 1);
+        self.assert_can_mint(account, 1, false);
         let total_cost = self.cost_of_linkdrop(account).0;
         self.pending_tokens += 1;
         let mint_for_free = self.is_owner(account);

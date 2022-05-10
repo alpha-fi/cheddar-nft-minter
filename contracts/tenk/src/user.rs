@@ -83,6 +83,15 @@ impl Contract {
             GAS_FOR_FT_TRANSFER,
         );
     }
+
+    /// returns a near value of cheddar deposited by user
+    pub fn cheddar_to_near(&self, user: &AccountId) -> u128 {
+        if let Some(a) = self.cheddar_deposits.get(user) {
+            a / 1000_000 * self.cheddar_near
+        } else {
+            0
+        }
+    }
 }
 
 #[ext_contract(ext_ft)]
