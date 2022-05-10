@@ -47,6 +47,9 @@ pub struct Contract {
     /// Address of the cheddar token
     cheddar: AccountId,
     cheddar_deposits: LookupMap<AccountId, u128>,
+    /// price of cheddar in NEAR:
+    /// amount of cheddar = (amount_near / 1e9) * cheddar_price;
+    cheddar_price: u128,
 
     // Linkdrop fields will be removed once proxy contract is deployed
     pub accounts: LookupMap<PublicKey, bool>,
@@ -103,6 +106,7 @@ impl Contract {
         size: u32,
         sale_price: U128,
         cheddar: AccountId,
+        cheddar_price: U128,
     ) -> Self {
         Self::new(
             owner_id,
@@ -110,6 +114,7 @@ impl Contract {
             size,
             Sale::new(sale_price.into()),
             cheddar,
+            cheddar_price,
         )
     }
 
@@ -120,6 +125,7 @@ impl Contract {
         size: u32,
         sale: Sale,
         cheddar: AccountId,
+        cheddar_price: U128,
     ) -> Self {
         metadata.assert_valid();
         sale.validate();
@@ -135,6 +141,7 @@ impl Contract {
             raffle: Raffle::new(StorageKey::Raffle, size as u64),
             pending_tokens: 0,
             cheddar,
+            cheddar_price: cheddar_price.into(),
             cheddar_deposits: LookupMap::new(StorageKey::CheddarDeposits),
             accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
@@ -144,22 +151,12 @@ impl Contract {
     }
 
     #[payable]
-    pub fn nft_mint(
-        &mut self,
-        _token_id: TokenId,
-        _token_owner_id: AccountId,
-        _token_metadata: TokenMetadata,
-    ) -> Token {
-        self.nft_mint_one()
+    pub fn nft_mint_one(&mut self, with_cheddar: bool) -> Token {
+        self.nft_mint_many(with_cheddar, 1)[0].clone()
     }
 
     #[payable]
-    pub fn nft_mint_one(&mut self) -> Token {
-        self.nft_mint_many(1)[0].clone()
-    }
-
-    #[payable]
-    pub fn nft_mint_many(&mut self, num: u32) -> Vec<Token> {
+    pub fn nft_mint_many(&mut self, with_cheddar: bool, num: u32) -> Vec<Token> {
         if let Some(limit) = self.sale.mint_rate_limit {
             require!(num <= limit, "over mint limit");
         }
@@ -251,7 +248,11 @@ impl Contract {
             num = u32::min(allowance, num);
             require!(num > 0, "Account has no more allowance left");
         }
-        require!(self.tokens_left() >= num, "No NFTs left to mint");
+        let left = self.tokens_left();
+        require!(
+            left >= num,
+            format!("Not NFTs left to mint, remaining nfts: {}", left)
+        );
         self.assert_deposit(num, account_id);
         num
     }
