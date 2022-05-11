@@ -24,18 +24,26 @@ use std::collections::HashMap;
 #[near_sdk::witgen]
 pub struct Payout {
     payout: HashMap<AccountId, U128>,
+    with_cheddar: bool,
 }
 
 impl Payout {
-    pub fn send_funds(self) {
-        self.payout.into_iter().for_each(|(account, amount)| {
-            Promise::new(account).transfer(amount.0);
-        });
+    pub fn send_funds(self, cheddar_deposits: &mut LookupMap<AccountId, u128>) {
+        if self.with_cheddar {
+            self.payout.into_iter().for_each(|(account, amount)| {
+                let a = cheddar_deposits.get(&account).unwrap_or_default() + amount.0;
+                cheddar_deposits.insert(&account, &a);
+            });
+        } else {
+            self.payout.into_iter().for_each(|(account, amount)| {
+                Promise::new(account).transfer(amount.0);
+            });
+        }
     }
 }
 
 pub trait Payouts {
-    /// Given a `token_id` and NEAR-denominated balance, return the `Payout`.
+    /// Given a `token_id` NFT and NEAR-denominated balance, return the `Payout`.
     /// struct for the given token. Panic if the length of the payout exceeds
     /// `max_len_payout.`
     fn nft_payout(&self, token_id: String, balance: U128, max_len_payout: Option<u32>) -> Payout;
@@ -62,10 +70,9 @@ impl Payouts for Contract {
             .owner_by_id
             .get(&token_id)
             .expect("No such token_id");
-        self.sale
-            .royalties
-            .as_ref()
-            .map_or(Payout::default(), |r| r.create_payout(balance.0, &owner_id))
+        self.sale.royalties.as_ref().map_or(Payout::default(), |r| {
+            r.create_payout(balance.0, &owner_id, false)
+        })
     }
 
     #[payable]
@@ -121,7 +128,12 @@ impl Royalties {
             "total percent of each royalty split must equal 10,000"
         )
     }
-    pub(crate) fn create_payout(&self, balance: Balance, owner_id: &AccountId) -> Payout {
+    pub(crate) fn create_payout(
+        &self,
+        balance: Balance,
+        owner_id: &AccountId,
+        with_cheddar: bool,
+    ) -> Payout {
         let royalty_payment = apply_percent(self.percent, balance);
         let mut payout = Payout {
             payout: self
@@ -134,6 +146,7 @@ impl Royalties {
                     )
                 })
                 .collect(),
+            with_cheddar,
         };
         let rest = balance - u128::min(royalty_payment, balance);
         let owner_payout: u128 = payout.payout.get(owner_id).map_or(0, |x| x.0) + rest;
@@ -141,8 +154,15 @@ impl Royalties {
         payout
     }
 
-    pub(crate) fn send_funds(&self, balance: Balance, owner_id: &AccountId) {
-        self.create_payout(balance, owner_id).send_funds();
+    pub(crate) fn send_funds(
+        &self,
+        balance: Balance,
+        owner_id: &AccountId,
+        with_cheddar: bool,
+        cheddar_deposits: &mut LookupMap<AccountId, u128>,
+    ) {
+        self.create_payout(balance, owner_id, with_cheddar)
+            .send_funds(cheddar_deposits);
     }
 }
 

@@ -16,6 +16,10 @@ const NO_DEPOSIT: Balance = 0;
 /// Gas attached to the callback from account creation.
 pub const ON_CREATE_ACCOUNT_CALLBACK_GAS: Gas = Gas(10_000_000_000_000);
 
+// NOTE
+// all linkdrops will use only NEAR as payment, NOT CHEDDAR!
+//
+
 #[ext_contract(ext_linkdrop)]
 trait ExtLinkdrop {
     fn create_account(&mut self, new_account_id: AccountId, new_public_key: PublicKey) -> Promise;
@@ -29,7 +33,7 @@ impl Contract {
     pub fn create_linkdrop(&mut self, public_key: PublicKey) -> Promise {
         let deposit = env::attached_deposit();
         let account = &env::predecessor_account_id();
-        self.assert_can_mint(account, 1, false);
+        self.assert_can_mint(account, 1);
         let total_cost = self.cost_of_linkdrop(account).0;
         self.pending_tokens += 1;
         let mint_for_free = self.is_owner(account);
@@ -57,7 +61,7 @@ impl Contract {
                 account_id.clone(),
                 mint_for_free,
                 env::current_account_id(),
-                self.total_cost(1, &account_id).0,
+                self.total_cost(1, &account_id, false).0,
                 GAS_REQUIRED_FOR_LINKDROP,
             ))
             .then(ext_linkdrop::on_create_and_claim(
@@ -83,7 +87,7 @@ impl Contract {
                 new_account_id.clone(),
                 mint_for_free,
                 env::current_account_id(),
-                self.total_cost(1, &new_account_id).0,
+                self.total_cost(1, &new_account_id, false).0,
                 GAS_REQUIRED_FOR_LINKDROP,
             ))
             .then(ext_linkdrop::on_create_and_claim(

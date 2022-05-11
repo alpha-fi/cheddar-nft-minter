@@ -19,12 +19,24 @@ impl Contract {
 
     /// Cost of NFT + fees for linkdrop
     pub fn cost_of_linkdrop(&self, minter: &AccountId) -> U128 {
-        (self.full_link_price(minter) + self.total_cost(1, minter).0 + self.token_storage_cost().0)
+        (self.full_link_price(minter)
+            + self._total_cost(1, minter, false)
+            + self.token_storage_cost().0)
             .into()
     }
 
-    pub fn total_cost(&self, num: u32, minter: &AccountId) -> U128 {
-        (num as Balance * self.cost_per_token(minter).0).into()
+    pub fn total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> U128 {
+        self._total_cost(num, minter, with_cheddar).into()
+    }
+
+    /// returns minting cost in near if `with_cheddar == false` or in cheddar otherwise
+    pub(crate) fn _total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> u128 {
+        let cost = num as Balance * self.cost_per_token(minter).0;
+        if with_cheddar {
+            cost / 1000_000 * self.cheddar_near / 100 * self.cheddar_boost as u128
+        } else {
+            cost
+        }
     }
 
     /// Flat cost of one token
@@ -90,6 +102,6 @@ impl Contract {
 
     /// Initial size of collection. Number left to raffle + current total supply
     pub fn initial(&self) -> u64 {
-      self.raffle.len() + self.nft_total_supply().0 as u64
-  }
+        self.raffle.len() + self.nft_total_supply().0 as u64
+    }
 }
