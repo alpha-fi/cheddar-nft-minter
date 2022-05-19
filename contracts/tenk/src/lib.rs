@@ -124,6 +124,8 @@ impl Contract {
     }
 
     /// `cheddar_discount` is value in %
+    /// `cheddar_near` - is the convertion rate. If 1 near = x cheddar, then you
+    ///    should set `cheddar_near=round(1e6/x)` rounding the decimals.
     #[init]
     pub fn new(
         owner_id: AccountId,

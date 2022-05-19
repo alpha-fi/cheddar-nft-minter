@@ -50,6 +50,7 @@ impl FungibleTokenReceiver for Contract {
     }
 }
 
+#[near_bindgen]
 impl Contract {
     /// if amount == None, then we withdraw all Cheddar and unregister the user
     pub fn withdraw_cheddar(&mut self, amount: Option<U128>) {
@@ -84,13 +85,17 @@ impl Contract {
         );
     }
 
-    /// returns a near value of cheddar deposited by user
-    pub fn cheddar_to_near(&self, user: &AccountId) -> u128 {
-        if let Some(a) = self.cheddar_deposits.get(user) {
+    /// returns user purchasing power in NEAR - how much he can spent in
+    pub fn cheddar_purchasing_power(&self, account_id: &AccountId) -> u128 {
+        if let Some(a) = self.cheddar_deposits.get(account_id) {
             a / 1000_000 * self.cheddar_near
         } else {
             0
         }
+    }
+
+    pub fn balance_of(&self, account_id: &AccountId) -> u128 {
+        self.cheddar_deposits.get(account_id).unwrap_or_default()
     }
 }
 
