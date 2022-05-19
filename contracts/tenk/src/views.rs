@@ -33,7 +33,7 @@ impl Contract {
     pub(crate) fn _total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> u128 {
         let cost = num as Balance * self.cost_per_token(minter).0;
         if with_cheddar {
-            cost / 1000_000 * self.cheddar_near / 100 * self.cheddar_boost as u128
+            cost / 1000 * self.cheddar_near / 100 * self.cheddar_boost as u128
         } else {
             cost
         }

@@ -85,17 +85,12 @@ impl Contract {
         );
     }
 
-    /// returns user purchasing power in NEAR - how much he can spent in
-    pub fn cheddar_purchasing_power(&self, account_id: &AccountId) -> u128 {
-        if let Some(a) = self.cheddar_deposits.get(account_id) {
-            a / 1000_000 * self.cheddar_near
-        } else {
-            0
-        }
-    }
-
-    pub fn balance_of(&self, account_id: &AccountId) -> u128 {
-        self.cheddar_deposits.get(account_id).unwrap_or_default()
+    /// returns user Cheddar balance
+    pub fn balance_of(&self, account_id: &AccountId) -> U128 {
+        self.cheddar_deposits
+            .get(account_id)
+            .unwrap_or_default()
+            .into()
     }
 }
 

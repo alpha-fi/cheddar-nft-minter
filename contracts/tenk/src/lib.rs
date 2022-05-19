@@ -47,8 +47,8 @@ pub struct Contract {
     /// Address of the cheddar token
     cheddar: AccountId,
     cheddar_deposits: LookupMap<AccountId, u128>,
-    /// cheddar from convertion expressed in 1e6, including the boost:
-    /// amount of cheddar = (amount_near / 1e6) * cheddar_near;
+    /// cheddar from convertion expressed in 1e3, including the boost:
+    /// amount of cheddar = (amount_near / 1e3) * cheddar_near;
     cheddar_near: u128,
     /// cheddar boost is a factor which will be applied when purchasing NFT with cheddar
     cheddar_boost: u32,
@@ -125,7 +125,7 @@ impl Contract {
 
     /// `cheddar_discount` is value in %
     /// `cheddar_near` - is the convertion rate. If 1 near = x cheddar, then you
-    ///    should set `cheddar_near=round(1e6/x)` rounding the decimals.
+    ///    should set `cheddar_near=round(x*1e3)` rounding the decimals.
     #[init]
     pub fn new(
         owner_id: AccountId,
@@ -259,7 +259,7 @@ impl Contract {
         self.assert_owner_or_admin();
         require!(cheddar_near > 0, "cheddar_near must be positive");
         require!(
-            cheddar_near < 10_000_000,
+            cheddar_near > 100,
             "1 cheddar is rather worth less than 10NEAR"
         );
         self.cheddar_near = cheddar_near as u128;
