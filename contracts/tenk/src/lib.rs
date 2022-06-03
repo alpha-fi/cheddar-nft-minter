@@ -49,6 +49,7 @@ pub struct Contract {
     cheddar_deposits: LookupMap<AccountId, u128>,
     /// cheddar from convertion expressed in 1e3, including the boost:
     /// amount of cheddar = (amount_near / 1e3) * cheddar_near;
+    /// Example. If 1 near = 438 cheddar, then we need to set cheddar_near = 438'000
     cheddar_near: u128,
     /// cheddar boost is a factor which will be applied when purchasing NFT with cheddar
     cheddar_boost: u32,
