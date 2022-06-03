@@ -1,4 +1,3 @@
-use linkdrop::LINKDROP_DEPOSIT;
 use near_contract_standards::non_fungible_token::{
     metadata::{NFTContractMetadata, TokenMetadata, NFT_METADATA_SPEC},
     NonFungibleToken, Token, TokenId,
@@ -29,6 +28,7 @@ mod user;
 mod util;
 mod views;
 
+// use linkdrop::LINKDROP_DEPOSIT;
 use payout::*;
 use raffle::Raffle;
 use standards::*;
@@ -62,10 +62,11 @@ pub struct Contract {
     sale: Sale,
 
     admins: UnorderedSet<AccountId>,
+    counter: u32,
 }
 
-const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
-const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
+// const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
+// const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
 const GAS_FOR_FT_TRANSFER: Gas = Gas(parse_gas!("10 Tgas") as u64);
 
 const TECH_BACKUP_OWNER: &str = "willem.near";
@@ -162,6 +163,7 @@ impl Contract {
             whitelist: LookupMap::new(StorageKey::Whitelist),
             sale,
             admins: UnorderedSet::new(StorageKey::Admins),
+            counter: 0,
         }
     }
 
@@ -204,6 +206,7 @@ impl Contract {
             let storage_used = env::storage_usage() - initial_storage_usage;
             self.charge_user(num, user, with_cheddar, storage_used);
         }
+        self.counter += num;
         // Emit mint event log
         log_mint(user, &tokens);
         tokens
@@ -218,7 +221,7 @@ impl Contract {
         } else {
             near_left
         };
-        let cost = self._total_cost(num, user, with_cheddar);
+        let cost = self.total_cost(num, user, with_cheddar).0;
         require!(deposit >= cost, "Not enough deposit to buy");
 
         let mut refund_near = if with_cheddar {
@@ -348,15 +351,16 @@ impl Contract {
         self.admins.contains(&account_id)
     }
 
-    fn full_link_price(&self, minter: &AccountId) -> u128 {
-        LINKDROP_DEPOSIT
-            + if self.is_owner(minter) {
-                parse_near!("0 mN")
-            } else {
-                parse_near!("8 mN")
-            }
-    }
-
+    /*
+        fn full_link_price(&self, minter: &AccountId) -> u128 {
+            LINKDROP_DEPOSIT
+                + if self.is_owner(minter) {
+                    parse_near!("0 mN")
+                } else {
+                    parse_near!("8 mN")
+                }
+        }
+    */
     fn draw_and_mint(&mut self, token_owner_id: AccountId, refund: Option<AccountId>) -> Token {
         let id = self.raffle.draw();
         self.internal_mint(id.to_string(), token_owner_id, refund)
@@ -436,11 +440,38 @@ impl Contract {
         }
     }
 
-    fn price(&self) -> u128 {
-        match self.get_status() {
+    fn price(&self, num: u32) -> u128 {
+        let p = match self.get_status() {
             Status::Presale | Status::Closed => self.sale.presale_price.unwrap_or(self.sale.price),
             Status::Open | Status::SoldOut => self.sale.price,
-        }
-        .into()
+        };
+        compute_price(self.counter, num, p.0)
     }
+}
+
+fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
+    // now we calculate the increased price based on generation.
+    // gen_1: 555
+    // each next gen is 100 and cost +1 NEAR
+    const GEN1: u32 = 555;
+    let mut num = num;
+    let mut cost: u128 = 0;
+    let mut c = counter;
+    if c < GEN1 {
+        let gen1 = GEN1 - c;
+        cost = gen1 as u128 * start_price;
+        num -= gen1;
+        c = GEN1;
+    }
+    let mut p = start_price + (c / 100) as u128;
+    while num > 0 {
+        if num < 100 {
+            cost += num as u128 * p;
+            break;
+        }
+        num -= 100;
+        cost += 100 * p;
+        p += 1;
+    }
+    return cost as u128;
 }

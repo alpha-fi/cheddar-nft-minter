@@ -1,4 +1,6 @@
+/*
 use crate::*;
+
 use near_sdk::{
     env, ext_contract, json_types::U128, log, near_bindgen, AccountId, Balance, Gas, Promise,
     PublicKey,
@@ -16,6 +18,9 @@ const NO_DEPOSIT: Balance = 0;
 /// Gas attached to the callback from account creation.
 pub const ON_CREATE_ACCOUNT_CALLBACK_GAS: Gas = Gas(10_000_000_000_000);
 
+*/
+
+/*
 // NOTE
 // all linkdrops will use only NEAR as payment, NOT CHEDDAR!
 //
@@ -166,3 +171,4 @@ impl Contract {
         )
     }
 }
+*/

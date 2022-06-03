@@ -17,34 +17,30 @@ impl Contract {
         self.whitelist.contains_key(account_id)
     }
 
-    /// Cost of NFT + fees for linkdrop
-    pub fn cost_of_linkdrop(&self, minter: &AccountId) -> U128 {
-        (self.full_link_price(minter)
-            + self._total_cost(1, minter, false)
-            + self.token_storage_cost().0)
-            .into()
-    }
+    /*
+        /// Cost of NFT + fees for linkdrop
+        pub fn cost_of_linkdrop(&self, minter: &AccountId) -> U128 {
+            (self.full_link_price(minter)
+                + self.total_cost(1, minter, false).0
+                + self.token_storage_cost().0)
+                .into()
+        }
+    */
 
     pub fn total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> U128 {
-        self._total_cost(num, minter, with_cheddar).into()
-    }
-
-    /// returns minting cost in near if `with_cheddar == false` or in cheddar otherwise
-    pub(crate) fn _total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> u128 {
-        let cost = num as Balance * self.cost_per_token(minter).0;
+        let mut cost = self.minting_cost(minter, num).0;
         if with_cheddar {
-            cost / 1000 * self.cheddar_near / 100 * self.cheddar_boost as u128
-        } else {
-            cost
+            cost = cost / 1000 * self.cheddar_near / 100 * self.cheddar_boost as u128;
         }
+        cost.into()
     }
 
-    /// Flat cost of one token
-    pub fn cost_per_token(&self, minter: &AccountId) -> U128 {
+    /// Flat cost in NEAR for minting given amount of tokens
+    pub fn minting_cost(&self, minter: &AccountId, num: u32) -> U128 {
         if self.is_owner(minter) {
             0
         } else {
-            self.price()
+            self.price(num)
         }
         .into()
     }
@@ -80,7 +76,7 @@ impl Contract {
             presale_start: self.sale.presale_start.unwrap_or(MAX_DATE),
             sale_start: self.sale.public_sale_start.unwrap_or(MAX_DATE),
             status: self.get_status(),
-            price: self.price().into(),
+            price: self.price(1).into(),
             token_final_supply: self.initial(),
         }
     }
