@@ -10,6 +10,7 @@ use crate::*;
 
 const E21: Balance = 1000_000000_000000_000000; // 1e21
 pub const MIN_BAL: Balance = E21 * 500; // 0.5
+pub const E24: u128 = E21 * 1000;
 
 // token deposits are done through NEP-141 ft_transfer_call to the NEARswap contract.
 #[near_bindgen]

@@ -12,7 +12,7 @@ use near_sdk::{
     witgen, AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
     PublicKey,
 };
-use near_units::{parse_gas, parse_near};
+use near_units::parse_gas;
 
 /// milliseconds elapsed since the UNIX epoch
 #[witgen]
@@ -33,6 +33,7 @@ use payout::*;
 use raffle::Raffle;
 use standards::*;
 use types::*;
+use user::E24;
 use util::{current_time_ms, is_promise_success, log_mint, refund};
 
 #[near_bindgen]
@@ -455,7 +456,6 @@ fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
     // each next gen is 100 nfts and cost +1 NEAR
     const GEN0: u32 = 555;
     const GEN_NEXT: u32 = 100;
-    const PRICE_INCREASE: u128 = 1;
 
     let mut num = num;
     let mut cost: u128 = 0;
@@ -466,7 +466,7 @@ fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
     } else {
         let gen = 1 + (counter - GEN0) / GEN_NEXT;
         gen_diff = GEN0 + gen * GEN_NEXT - counter;
-        p += gen as u128;
+        p += E24 * gen as u128;
     }
     println!("start price: {}  p: {}", start_price, p);
     while num > 0 {
@@ -476,7 +476,7 @@ fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
         }
         num -= gen_diff;
         cost += gen_diff as u128 * p;
-        p += PRICE_INCREASE;
+        p += E24;
         gen_diff = GEN_NEXT;
     }
     return cost;
@@ -486,48 +486,52 @@ fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
 mod tests {
     use super::*;
 
+    fn compute_price_h(counter: u32, num: u32, start_price: u128) -> u128 {
+        compute_price(counter, num, start_price * E24) / E24
+    }
+
     #[test]
     fn test_compute_price_1() {
-        assert_eq!(compute_price(0, 1, 10), 10);
-        assert_eq!(compute_price(1, 1, 10), 10);
-        assert_eq!(compute_price(500, 1, 10), 10);
-        assert_eq!(compute_price(554, 1, 10), 10);
+        assert_eq!(compute_price_h(0, 1, 10), 10);
+        assert_eq!(compute_price_h(1, 1, 10), 10);
+        assert_eq!(compute_price_h(500, 1, 10), 10);
+        assert_eq!(compute_price_h(554, 1, 10), 10);
 
-        assert_eq!(compute_price(555, 1, 10), 11, "minting 1 in gen2");
-        assert_eq!(compute_price(556, 1, 10), 11, "minting 1 in gen2");
-        assert_eq!(compute_price(654, 1, 10), 11, "minting 1 in gen2");
-        assert_eq!(compute_price(655, 1, 10), 12, "minting 1 in gen3");
-        assert_eq!(compute_price(5554, 1, 10), 60, "minting 1 in gen51");
-        assert_eq!(compute_price(5555, 1, 10), 61, "minting 1 in gen52");
+        assert_eq!(compute_price_h(555, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price_h(556, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price_h(654, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price_h(655, 1, 10), 12, "minting 1 in gen3");
+        assert_eq!(compute_price_h(5554, 1, 10), 60, "minting 1 in gen51");
+        assert_eq!(compute_price_h(5555, 1, 10), 61, "minting 1 in gen52");
     }
 
     #[test]
     fn test_compute_price_2() {
-        // assert_eq!(compute_price(754, 1, 10), 12);
-        // assert_eq!(compute_price(755, 1, 10), 13);
-        assert_eq!(compute_price(754, 3, 10), 12 + 2 * 13);
+        assert_eq!(compute_price_h(754, 1, 10), 12);
+        assert_eq!(compute_price_h(755, 1, 10), 13);
+        assert_eq!(compute_price_h(754, 3, 10), 12 + 2 * 13);
     }
 
     #[test]
     fn test_compute_price_3() {
-        assert_eq!(compute_price(0, 10, 10), 100);
-        assert_eq!(compute_price(1, 10, 10), 100);
-        assert_eq!(compute_price(500, 10, 10), 100);
+        assert_eq!(compute_price_h(0, 10, 10), 100);
+        assert_eq!(compute_price_h(1, 10, 10), 100);
+        assert_eq!(compute_price_h(500, 10, 10), 100);
 
-        assert_eq!(compute_price(0, 555, 10), 555 * 10);
+        assert_eq!(compute_price_h(0, 555, 10), 555 * 10);
 
-        assert_eq!(compute_price(0, 560, 10), 555 * 10 + 5 * 11);
+        assert_eq!(compute_price_h(0, 560, 10), 555 * 10 + 5 * 11);
         assert_eq!(
-            compute_price(0, 860, 10),
+            compute_price_h(0, 860, 10),
             555 * 10 + 100 * 11 + 100 * 12 + 100 * 13 + 5 * 14
         );
-        assert_eq!(compute_price(500, 100, 10), 55 * 10 + 45 * 11);
+        assert_eq!(compute_price_h(500, 100, 10), 55 * 10 + 45 * 11);
         assert_eq!(
-            compute_price(500, 300, 10),
+            compute_price_h(500, 300, 10),
             55 * 10 + 100 * 11 + 100 * 12 + 45 * 13
         );
 
-        assert_eq!(compute_price(554, 10, 10), 10 + 9 * 11);
-        assert_eq!(compute_price(555, 10, 10), 10 * 11);
+        assert_eq!(compute_price_h(554, 10, 10), 10 + 9 * 11);
+        assert_eq!(compute_price_h(555, 10, 10), 10 * 11);
     }
 }
