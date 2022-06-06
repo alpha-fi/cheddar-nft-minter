@@ -454,24 +454,87 @@ fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
     // gen_1: 555
     // each next gen is 100 and cost +1 NEAR
     const GEN1: u32 = 555;
+    const GEN_NEXT: u32 = 100;
+    const PRICE_INCREASE: u128 = 1;
+
     let mut num = num;
     let mut cost: u128 = 0;
     let mut c = counter;
     if c < GEN1 {
-        let gen1 = GEN1 - c;
-        cost = gen1 as u128 * start_price;
-        num -= gen1;
-        c = GEN1;
+        let available_in_gen1 = GEN1 - c;
+        if num < available_in_gen1 {
+            cost = num as u128 * start_price;
+            c += num;
+            num = 0;
+        } else {
+            cost = available_in_gen1 as u128 * start_price;
+            num -= available_in_gen1;
+            c = GEN1;
+        }
     }
-    let mut p = start_price + (c / 100) as u128;
+    if num == 0 {
+        return cost;
+    }
+    let mut p = start_price + 1 + ((c - GEN1) / GEN_NEXT) as u128;
+    println!("start price: {}  p: {}", start_price, p);
     while num > 0 {
-        if num < 100 {
+        if num < GEN_NEXT {
             cost += num as u128 * p;
             break;
         }
-        num -= 100;
-        cost += 100 * p;
-        p += 1;
+        num -= GEN_NEXT;
+        cost += GEN_NEXT as u128 * p;
+        p += PRICE_INCREASE;
     }
-    return cost as u128;
+    return cost;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_price_1() {
+        assert_eq!(compute_price(0, 1, 10), 10);
+        assert_eq!(compute_price(1, 1, 10), 10);
+        assert_eq!(compute_price(500, 1, 10), 10);
+        assert_eq!(compute_price(554, 1, 10), 10);
+
+        assert_eq!(compute_price(555, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price(556, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price(654, 1, 10), 11, "minting 1 in gen2");
+        assert_eq!(compute_price(655, 1, 10), 12, "minting 1 in gen3");
+        assert_eq!(compute_price(5554, 1, 10), 60, "minting 1 in gen51");
+        assert_eq!(compute_price(5555, 1, 10), 61, "minting 1 in gen52");
+    }
+
+    #[test]
+    fn test_compute_price_2() {
+        // assert_eq!(compute_price(754, 1, 10), 12);
+        // assert_eq!(compute_price(755, 1, 10), 13);
+        assert_eq!(compute_price(754, 3, 10), 12 + 2 * 13);
+    }
+
+    #[test]
+    fn test_compute_price_3() {
+        assert_eq!(compute_price(0, 10, 10), 100);
+        assert_eq!(compute_price(1, 10, 10), 100);
+        assert_eq!(compute_price(500, 10, 10), 100);
+
+        assert_eq!(compute_price(0, 555, 10), 555 * 10);
+
+        assert_eq!(compute_price(0, 560, 10), 555 * 10 + 5 * 11);
+        assert_eq!(
+            compute_price(0, 860, 10),
+            555 * 10 + 100 * 11 + 100 * 12 + 100 * 13 + 5 * 14
+        );
+        assert_eq!(compute_price(500, 100, 10), 55 * 10 + 45 * 11);
+        assert_eq!(
+            compute_price(500, 300, 10),
+            55 * 10 + 100 * 11 + 100 * 12 + 45 * 13
+        );
+
+        assert_eq!(compute_price(554, 10, 10), 10 + 9 * 11);
+        assert_eq!(compute_price(555, 10, 10), 10 * 11);
+    }
 }

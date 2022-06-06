@@ -148,12 +148,15 @@ mod tests {
             initial_metadata(),
             10_000,
             TEN.into(),
+            AccountId::new_unchecked("cheddar.near".to_string()),
+            10000,
+            10,
         )
     }
 
     #[test]
     fn check_price() {
         let contract = new_contract();
-        assert_eq!(contract.cost_per_token(&account()).0, TEN);
+        assert_eq!(contract.minting_cost(&account(), 1).0, TEN);
     }
 }
