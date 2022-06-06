@@ -451,40 +451,33 @@ impl Contract {
 
 fn compute_price(counter: u32, num: u32, start_price: u128) -> u128 {
     // now we calculate the increased price based on generation.
-    // gen_1: 555
-    // each next gen is 100 and cost +1 NEAR
-    const GEN1: u32 = 555;
+    // gen_0: 555
+    // each next gen is 100 nfts and cost +1 NEAR
+    const GEN0: u32 = 555;
     const GEN_NEXT: u32 = 100;
     const PRICE_INCREASE: u128 = 1;
 
     let mut num = num;
     let mut cost: u128 = 0;
-    let mut c = counter;
-    if c < GEN1 {
-        let available_in_gen1 = GEN1 - c;
-        if num < available_in_gen1 {
-            cost = num as u128 * start_price;
-            c += num;
-            num = 0;
-        } else {
-            cost = available_in_gen1 as u128 * start_price;
-            num -= available_in_gen1;
-            c = GEN1;
-        }
+    let mut gen_diff;
+    let mut p = start_price;
+    if counter < GEN0 {
+        gen_diff = GEN0 - counter;
+    } else {
+        let gen = 1 + (counter - GEN0) / GEN_NEXT;
+        gen_diff = GEN0 + gen * GEN_NEXT - counter;
+        p += gen as u128;
     }
-    if num == 0 {
-        return cost;
-    }
-    let mut p = start_price + 1 + ((c - GEN1) / GEN_NEXT) as u128;
     println!("start price: {}  p: {}", start_price, p);
     while num > 0 {
-        if num < GEN_NEXT {
+        if num < gen_diff {
             cost += num as u128 * p;
             break;
         }
-        num -= GEN_NEXT;
-        cost += GEN_NEXT as u128 * p;
+        num -= gen_diff;
+        cost += gen_diff as u128 * p;
         p += PRICE_INCREASE;
+        gen_diff = GEN_NEXT;
     }
     return cost;
 }
