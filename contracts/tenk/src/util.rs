@@ -1,8 +1,9 @@
 use near_contract_standards::non_fungible_token::{events::NftMint, Token};
-use near_sdk::{env, AccountId, Promise, PromiseResult};
+use near_sdk::{env, AccountId, PromiseResult};
+// use near_sdk::Promise;
 
 use crate::TimestampMs;
-
+#[allow(unused)]
 pub fn is_promise_success(num_of_promises: Option<u64>) -> bool {
     let count = env::promise_results_count();
     if num_of_promises.map_or(false, |num| num != count) {
@@ -25,14 +26,15 @@ pub fn get_random_number(shift_amount: u32) -> u32 {
     arr.copy_from_slice(&seed[..4]);
     u32::from_le_bytes(arr)
 }
-
+/// Linkdrop refund
+/*
 pub fn refund(account_id: &AccountId, amount: u128) -> Option<Promise> {
     if amount > 0 {
         return Some(Promise::new(account_id.clone()).transfer(amount));
     };
     None
 }
-
+*/
 pub fn current_time_ms() -> TimestampMs {
     env::block_timestamp() / 1_000_000
 }

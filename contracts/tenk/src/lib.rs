@@ -4,15 +4,17 @@ use near_contract_standards::non_fungible_token::{
 };
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LazyOption, LookupMap, UnorderedSet},
-    env, ext_contract,
+    collections::{LazyOption, LookupMap, UnorderedSet, UnorderedMap},
+    env,
     json_types::{Base64VecU8, U128},
     log, near_bindgen, require,
     serde::{Deserialize, Serialize},
     witgen, AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
     PublicKey,
 };
-use near_units::parse_gas;
+/// unused (for linkdrops)
+#[allow(unused_imports)]
+use near_sdk::ext_contract;
 
 /// milliseconds elapsed since the UNIX epoch
 #[witgen]
@@ -33,8 +35,9 @@ use payout::*;
 use raffle::Raffle;
 use standards::*;
 use types::*;
-use user::E24;
-use util::{current_time_ms, is_promise_success, log_mint, refund};
+/// unused (for linkdrops)
+//use util::{is_promise_success, refund};
+use util::{current_time_ms, log_mint};
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -45,16 +48,8 @@ pub struct Contract {
     raffle: Raffle,
     pending_tokens: u32,
 
-    /// Address of the cheddar token
-    cheddar: AccountId,
-    cheddar_deposits: LookupMap<AccountId, u128>,
-    /// cheddar from convertion expressed in 1e3, including the boost:
-    /// amount of cheddar = (amount_near / 1e3) * cheddar_near;
-    /// Example. If 1 near = 438 cheddar, then we need to set cheddar_near = 438'000
-    cheddar_near: u128,
-    /// cheddar boost is a factor which will be applied when purchasing NFT with cheddar
-    cheddar_boost: u32,
-
+    // When owner whitelist a token, he also sets token_near convertion rate and boost
+    fungible_tokens: UnorderedMap<AccountId, TokenParameters>,
     // Linkdrop fields will be removed once proxy contract is deployed
     pub accounts: LookupMap<PublicKey, bool>,
     // Whitelist
@@ -68,12 +63,15 @@ pub struct Contract {
 
 // const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
 // const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
-const GAS_FOR_FT_TRANSFER: Gas = Gas(parse_gas!("10 Tgas") as u64);
-
-const TECH_BACKUP_OWNER: &str = "cheddar.near";
-const MAX_DATE: u64 = 8640000000000000;
 // const GAS_REQUIRED_FOR_LINKDROP_CALL: Gas = Gas(5_000_000_000_000);
 
+const GAS_FOR_FT_TRANSFER: Gas = Gas(10 * Gas::ONE_TERA.0); // 10 Tgas
+const TECH_BACKUP_OWNER: &str = "token.near";
+const MAX_DATE: u64 = 8640000000000000;
+const E24:u128 = 1_000_000_000_000_000_000_000_000;
+pub const ONE_YOCTO:u128 = 1;
+
+/*
 #[ext_contract(ext_self)]
 trait Linkdrop {
     fn send_with_callback(
@@ -87,6 +85,7 @@ trait Linkdrop {
 
     fn link_callback(&mut self, account_id: AccountId, mint_for_free: bool) -> Token;
 }
+*/
 
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
@@ -99,52 +98,40 @@ enum StorageKey {
     LinkdropKeys,
     Whitelist,
     Admins,
-    CheddarDeposits,
+    TokenDeposits,
+    WhitelistedTokens
 }
 
 #[near_bindgen]
 impl Contract {
-    /// `cheddar_discount` is value in %
+    /// `token_discount` is value in %
     #[init]
     pub fn new_with_sale_price(
         owner_id: AccountId,
         metadata: InitialMetadata,
         size: u32,
         sale_price: U128,
-        cheddar: AccountId,
-        cheddar_near: u32,
-        cheddar_discount: u32,
     ) -> Self {
         Self::new(
             owner_id,
             metadata.into(),
             size,
             Sale::new(sale_price.into()),
-            cheddar,
-            cheddar_near,
-            cheddar_discount,
         )
     }
 
-    /// `cheddar_discount` is value in %
-    /// `cheddar_near` - is the convertion rate. If 1 near = x cheddar, then you
-    ///    should set `cheddar_near=round(x*1e3)` rounding the decimals.
+    /// `token_discount` is value in %
+    /// `token_near` - is the convertion rate. If 1 near = x token, then you
+    ///      should set `token_near=round(x*1e3)` rounding the decimals.
     #[init]
     pub fn new(
         owner_id: AccountId,
         metadata: NFTContractMetadata,
         size: u32,
         sale: Sale,
-        cheddar: AccountId,
-        cheddar_near: u32,
-        cheddar_discount: u32,
     ) -> Self {
         metadata.assert_valid();
         sale.validate();
-        require!(
-            cheddar_discount < 100,
-            "cheddar discount can't be more than 100%"
-        );
         Self {
             tokens: NonFungibleToken::new(
                 StorageKey::NonFungibleToken,
@@ -156,10 +143,7 @@ impl Contract {
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
             raffle: Raffle::new(StorageKey::Raffle, size as u64),
             pending_tokens: 0,
-            cheddar,
-            cheddar_near: cheddar_near.into(),
-            cheddar_boost: 100 - cheddar_discount,
-            cheddar_deposits: LookupMap::new(StorageKey::CheddarDeposits),
+            fungible_tokens: UnorderedMap::new(StorageKey::WhitelistedTokens),
             accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
             sale,
@@ -167,20 +151,20 @@ impl Contract {
             counter: 0,
         }
     }
-
+    //TODO : Check this
     #[payable]
-    pub fn nft_mint_one(&mut self, with_cheddar: bool) -> Token {
-        self.nft_mint_many(with_cheddar, 1)[0].clone()
+    pub fn nft_mint_one(&mut self, token_id: Option<AccountId>) -> Token {
+        self.nft_mint_many(token_id, 1)[0].clone()
     }
-
+    //TODO : Check this
     #[payable]
-    pub fn nft_mint_many(&mut self, with_cheddar: bool, num: u32) -> Vec<Token> {
+    pub fn nft_mint_many(&mut self, token_id: Option<AccountId>, num: u32) -> Vec<Token> {
         if let Some(limit) = self.sale.mint_rate_limit {
             require!(num <= limit, "over mint limit");
         }
         let owner_id = &env::signer_account_id();
         let num = self.assert_can_mint(owner_id, num);
-        let tokens = self.nft_mint_many_ungaurded(num, owner_id, false, with_cheddar);
+        let tokens = self.nft_mint_many_ungaurded(num, owner_id, false, token_id);
         self.use_whitelist_allowance(owner_id, num);
         tokens
     }
@@ -190,8 +174,10 @@ impl Contract {
         num: u32,
         user: &AccountId,
         mint_for_free: bool,
-        with_cheddar: bool,
+        token_id: Option<AccountId>,
     ) -> Vec<Token> {
+
+        //Storage usage
         let initial_storage_usage = if mint_for_free {
             0
         } else {
@@ -205,7 +191,7 @@ impl Contract {
 
         if !mint_for_free {
             let storage_used = env::storage_usage() - initial_storage_usage;
-            self.charge_user(num, user, with_cheddar, storage_used);
+            self.charge_user(num, user, token_id, storage_used);
         }
         self.counter += num;
         // Emit mint event log
@@ -213,45 +199,54 @@ impl Contract {
         tokens
     }
 
-    fn charge_user(&mut self, num: u32, user: &AccountId, with_cheddar: bool, storage_used: u64) {
+    fn charge_user(&mut self, num: u32, user: &AccountId, token_id: Option<AccountId>, storage_used: u64) {
+        
         let storage_cost = env::storage_byte_cost() * storage_used as Balance;
         let near_left = env::attached_deposit() - storage_cost;
 
-        let deposit = if with_cheddar {
-            self.cheddar_deposits.get(user).unwrap_or_default()
+        let deposit = if token_id.is_some() {
+            let token_parameters = self.get_token_parameters(&token_id);
+            token_parameters.token_deposits.get(user).unwrap_or(0)
         } else {
             near_left
         };
-        let cost = self.total_cost(num, user, with_cheddar).0;
+
+        let cost = self.total_cost(num, user, &token_id).0;
         require!(deposit >= cost, "Not enough deposit to buy");
 
-        let mut refund_near = if with_cheddar {
+        let mut refund_near = if token_id.is_some() {
             near_left
         } else {
             near_left - cost
         };
-        if with_cheddar {
+
+        if token_id.is_some() {
             let new_deposit = deposit - cost;
+            let mut token_parameters = self.get_token_parameters(&token_id);
             if new_deposit == 0 {
-                self.cheddar_deposits.remove(&user);
+                token_parameters.token_deposits.remove(&user);
+                self.fungible_tokens.insert(&token_id.as_ref().unwrap(), &token_parameters);
             } else {
-                self.cheddar_deposits.insert(user, &new_deposit);
+                token_parameters.token_deposits.insert(user, &new_deposit);
+                self.fungible_tokens.insert(&token_id.as_ref().unwrap(), &token_parameters);
             }
         }
 
         if let Some(royalties) = &self.sale.initial_royalties {
+            let mut token_parameters = self.get_token_parameters(&token_id);
             royalties.send_funds(
                 cost,
                 &self.tokens.owner_id,
-                with_cheddar,
-                &mut self.cheddar_deposits,
+                token_id,
+                &mut token_parameters.token_deposits
             );
         } else {
             log!("Royalities are not defined: user is not charged");
-            if !with_cheddar {
+            if !(token_id.is_some()) {
                 refund_near += cost;
             }
         }
+        // refund(user, refund_near);
         if refund_near > 1 {
             Promise::new(user.clone()).transfer(refund_near);
         }
@@ -259,19 +254,55 @@ impl Contract {
 
     // admin methods
 
-    /// update the cheddar_near convertion
-    pub fn admin_set_cheddar_near(&mut self, cheddar_near: u32) {
+    pub fn whitelist_token(&mut self,token_id: AccountId, token_near: u128, token_discount: u8, token_decimals: u8) {
         self.assert_owner_or_admin();
-        require!(cheddar_near > 0, "cheddar_near must be positive");
+        require!(token_near > 0, "token_near must be positive");
         require!(
-            cheddar_near > 100,
-            "1 cheddar is rather worth less than 10NEAR"
+            token_near > 100,
+            "1 token is rather worth less than 10NEAR"
         );
-        self.cheddar_near = cheddar_near as u128;
+        require!(
+            token_discount < 100,
+            "Discount value cannot be more than 100%"
+        );
+        if !self.is_token_whitelisted(&token_id) {
+            let token_boost = 100 - token_discount as u32;
+            let token_parameters = TokenParameters::new(token_near, token_boost, token_decimals);
+            self.fungible_tokens.insert(&token_id, &token_parameters);
+        } else {
+            log!("Token {} already whitelisted in contract", token_id);
+        }
     }
 
-    // Contract private methods
+    /// update the token_near convertion
+    pub fn admin_set_token_near(&mut self, token_id: AccountId, token_near: u128) {
+        self.assert_owner_or_admin();
+        require!(token_near > 0, "token_near must be positive");
+        require!(
+            token_near > 100,
+            "1 token is rather worth less than 10NEAR"
+        );
+        let mut token_parameters = self.fungible_tokens.get(&token_id).expect("Token isn't whitelisted");
+        token_parameters.token_near = token_near;
+        self.fungible_tokens.insert(&token_id, &token_parameters);
+    }
+    /// update the token discount
+    pub fn admin_set_token_discount(&mut self, token_id: AccountId, token_discount: u8) {
+        self.assert_owner_or_admin();
+        require!(token_discount > 0, "token_near must be positive");
+        require!(
+            token_discount < 100,
+            "99% - max discount available"
+        );
+        let mut token_parameters = self.fungible_tokens.get(&token_id).expect("Token isn't whitelisted");
+        token_parameters.token_boost = 100 - token_discount as u32;
+        self.fungible_tokens.insert(&token_id, &token_parameters);
+    }
 
+
+    // Contract private methods
+    // Linkdrop 
+    /*
     #[private]
     #[payable]
     pub fn on_send_with_callback(&mut self) {
@@ -289,13 +320,26 @@ impl Contract {
     pub fn link_callback(&mut self, account_id: AccountId, mint_for_free: bool) -> Token {
         if is_promise_success(None) {
             self.pending_tokens -= 1;
-            self.nft_mint_many_ungaurded(1, &account_id, mint_for_free, false)[0].clone()
+            self.nft_mint_many_ungaurded(1, &account_id, mint_for_free, None)[0].clone()
         } else {
             env::panic_str("Promise before Linkdrop callback failed");
         }
     }
+    */
 
     // Private methods
+    fn get_token_parameters(&self, token: &Option<AccountId>) -> TokenParameters {
+        match token {
+            Some(token_id) => {
+                self.fungible_tokens
+                    .get(token_id)
+                    .expect("Token isn't whitelisted!")
+            },
+            None => {
+                TokenParameters::default()
+            },
+        }
+    }
 
     fn assert_can_mint(&mut self, account_id: &AccountId, num: u32) -> u32 {
         let mut num = num;

@@ -26,11 +26,11 @@ impl Contract {
                 .into()
         }
     */
-
-    pub fn total_cost(&self, num: u32, minter: &AccountId, with_cheddar: bool) -> U128 {
+    pub fn total_cost(&self, num: u32, minter: &AccountId, token_id: &Option<AccountId>) -> U128 {
         let mut cost = self.minting_cost(minter, num).0;
-        if with_cheddar {
-            cost = cost / 1000 * self.cheddar_near / 100 * self.cheddar_boost as u128;
+        if token_id.is_some() {
+            let token_parameters = self.get_token_parameters(token_id);
+            cost = cost / 1000 * token_parameters.token_near / 100 * token_parameters.token_boost as u128;
         }
         cost.into()
     }
@@ -100,4 +100,46 @@ impl Contract {
     pub fn initial(&self) -> u64 {
         self.raffle.len() + self.nft_total_supply().0 as u64
     }
+    /// Fungible token
+    pub fn get_whitelisted_tokens(&self) -> Vec<(AccountId, TokenParametersOutput)> {
+        let tokens = &self.fungible_tokens;
+        let mut result:Vec<(AccountId, TokenParametersOutput)> = vec![];
+        for token in tokens.keys() {
+            let parameters = tokens.get(&token).unwrap();
+            let parameters_output = TokenParametersOutput::from(parameters);
+            result.push((token, parameters_output));
+        };
+        result
+    }
+    pub fn is_token_whitelisted(&self, token_id: &AccountId) -> bool {
+        let tokens = &self.fungible_tokens;
+        let mut result:Vec<AccountId> = vec![];
+        for token in tokens.keys() {
+            result.push(token);
+        };
+        result.contains(token_id)
+    }
+    pub fn get_token_decimals(&self, token: &AccountId) -> u8 {
+        let token_parameters = self.get_token_parameters(&Some(token.clone()));
+        token_parameters.decimals
+    }
+    pub fn get_one_token_in_yocto(&self, token: &AccountId) -> u128 {
+        let decimals = self.get_token_decimals(token);
+        let one_token:u128 = 10u128.pow(decimals.into());
+        one_token
+    }
+}
+#[test]
+fn test_get_one_token() {
+    let decimals_24:u8 = 24;
+    let decimals_18:u8 = 18;
+    let decimals_8:u8 = 8;
+
+    let one_token_24:u128 = 10u128.pow(decimals_24.into());
+    let one_token_18:u128 = 10u128.pow(decimals_18.into());
+    let one_token_8:u128 = 10u128.pow(decimals_8.into());
+
+    assert_eq!(one_token_24, 1_000_000_000_000_000_000_000_000);
+    assert_eq!(one_token_18, 1_000_000_000_000_000_000);
+    assert_eq!(one_token_8, 100_000_000);
 }

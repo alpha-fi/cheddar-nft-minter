@@ -22,7 +22,7 @@ pub const ON_CREATE_ACCOUNT_CALLBACK_GAS: Gas = Gas(10_000_000_000_000);
 
 /*
 // NOTE
-// all linkdrops will use only NEAR as payment, NOT CHEDDAR!
+// all linkdrops will use only NEAR as payment, NOT FUNGIBLE TOKENS!
 //
 
 #[ext_contract(ext_linkdrop)]

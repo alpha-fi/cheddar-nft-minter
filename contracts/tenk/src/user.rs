@@ -4,13 +4,9 @@
 
 use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
 use near_sdk::json_types::U128;
-use near_sdk::{env, ext_contract, log, AccountId, Balance, PromiseOrValue};
+use near_sdk::{env, ext_contract, log, AccountId, PromiseOrValue};
 
 use crate::*;
-
-const E21: Balance = 1000_000000_000000_000000; // 1e21
-pub const MIN_BAL: Balance = E21 * 500; // 0.5
-pub const E24: u128 = E21 * 1000;
 
 // token deposits are done through NEP-141 ft_transfer_call to the NEARswap contract.
 #[near_bindgen]
@@ -34,16 +30,20 @@ impl FungibleTokenReceiver for Contract {
         msg: String,
     ) -> PromiseOrValue<U128> {
         let token = env::predecessor_account_id();
-        assert!(token == self.cheddar, "only CHEDDAR deposits are allowed()");
-        if let Some(deposit) = self.cheddar_deposits.get(&sender_id) {
-            self.cheddar_deposits
+        let mut token_parameters = self.get_token_parameters(&Some(token.clone()));
+        
+        if let Some(deposit) = token_parameters.token_deposits.get(&sender_id) {
+            token_parameters.token_deposits
                 .insert(&sender_id, &(deposit + amount.0));
+            self.fungible_tokens.insert(&token, &token_parameters);
         } else {
             assert!(
-                amount.0 >= MIN_BAL,
-                "deposit amount must be at least 0.1 CHEDDAR"
+                amount.0 >= self.get_one_token_in_yocto(&token),
+                "deposit amount must be at least 0.1 of {}", &token
             );
-            self.cheddar_deposits.insert(&sender_id, &amount.0);
+            token_parameters.token_deposits
+                .insert(&sender_id, &amount.0);
+            self.fungible_tokens.insert(&token, &token_parameters);
             log!("Registering account {}", sender_id);
         }
 
@@ -53,42 +53,52 @@ impl FungibleTokenReceiver for Contract {
 
 #[near_bindgen]
 impl Contract {
-    /// if amount == None, then we withdraw all Cheddar and unregister the user
-    pub fn withdraw_cheddar(&mut self, amount: Option<U128>) {
+    /// if amount == None, then we withdraw all tokens and unregister the user
+    pub fn withdraw_token(&mut self, amount: Option<U128>, token_id: AccountId) {
         let user = env::predecessor_account_id();
-        let mut deposit = self
-            .cheddar_deposits
+        let token = &Some(token_id.clone());
+
+        let mut deposit = self.get_token_parameters(token)
+            .token_deposits
             .get(&user)
             .expect("account deposit is empty");
 
         if amount.is_none() {
             log!("Unregistering account {}", user);
-            self.cheddar_deposits.remove(&user);
+            self.get_token_parameters(token)
+                .token_deposits
+                .remove(&user);
         } else {
             let amount = amount.unwrap().0;
             assert!(deposit >= amount, "not enough deposit");
             if deposit == amount {
                 log!("Unregistering account {}", user);
-                self.cheddar_deposits.remove(&user);
+                self.get_token_parameters(token)
+                    .token_deposits
+                    .remove(&user);
             } else {
                 deposit -= amount;
-                assert!(deposit > MIN_BAL, "When withdrawing, either withdraw everyting to unregister or keep at least 1Cheddar");
-                self.cheddar_deposits.insert(&user, &(deposit));
+                assert!(deposit > self.get_one_token_in_yocto(&token_id), "When withdrawing, either withdraw everyting to unregister or keep at least 1 Token");
+                self.get_token_parameters(token)
+                    .token_deposits
+                    .insert(&user, &(deposit));
             }
         }
         ext_ft::ft_transfer(
             user,
             deposit.into(),
-            Some("Cheddar TENK withdraw".to_string()),
-            self.cheddar.clone(),
-            1,
+            Some("Token withdraw".to_string()),
+            token_id,
+            ONE_YOCTO,
             GAS_FOR_FT_TRANSFER,
         );
+        
     }
 
-    /// returns user Cheddar balance
-    pub fn balance_of(&self, account_id: &AccountId) -> U128 {
-        self.cheddar_deposits
+    /// returns user Token balance
+    pub fn balance_of(&self, account_id: &AccountId, token_id: &Option<AccountId>) -> U128 {
+        self.get_token_parameters(token_id)
+            .token_deposits
             .get(account_id)
             .unwrap_or_default()
             .into()

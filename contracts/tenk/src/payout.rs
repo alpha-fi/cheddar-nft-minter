@@ -24,15 +24,15 @@ use std::collections::HashMap;
 #[near_sdk::witgen]
 pub struct Payout {
     payout: HashMap<AccountId, U128>,
-    with_cheddar: bool,
+    token_id: Option<AccountId>,
 }
-
+//TODO: Check This
 impl Payout {
-    pub fn send_funds(self, cheddar_deposits: &mut LookupMap<AccountId, u128>) {
-        if self.with_cheddar {
+    pub fn send_funds(self, token_deposits: &mut LookupMap<AccountId, u128>) {
+        if self.token_id.is_some() {
             self.payout.into_iter().for_each(|(account, amount)| {
-                let a = cheddar_deposits.get(&account).unwrap_or_default() + amount.0;
-                cheddar_deposits.insert(&account, &a);
+                let a = token_deposits.get(&account).unwrap_or_default() + amount.0;
+                token_deposits.insert(&account, &a);
             });
         } else {
             self.payout.into_iter().for_each(|(account, amount)| {
@@ -71,7 +71,8 @@ impl Payouts for Contract {
             .get(&token_id)
             .expect("No such token_id");
         self.sale.royalties.as_ref().map_or(Payout::default(), |r| {
-            r.create_payout(balance.0, &owner_id, false)
+            //TODO: check this
+            r.create_payout(balance.0, &owner_id, None)
         })
     }
 
@@ -132,7 +133,7 @@ impl Royalties {
         &self,
         balance: Balance,
         owner_id: &AccountId,
-        with_cheddar: bool,
+        token_id: Option<AccountId>,
     ) -> Payout {
         let royalty_payment = apply_percent(self.percent, balance);
         let mut payout = Payout {
@@ -146,7 +147,7 @@ impl Royalties {
                     )
                 })
                 .collect(),
-            with_cheddar,
+            token_id,
         };
         let rest = balance - u128::min(royalty_payment, balance);
         let owner_payout: u128 = payout.payout.get(owner_id).map_or(0, |x| x.0) + rest;
@@ -158,11 +159,11 @@ impl Royalties {
         &self,
         balance: Balance,
         owner_id: &AccountId,
-        with_cheddar: bool,
-        cheddar_deposits: &mut LookupMap<AccountId, u128>,
+        token_id: Option<AccountId>,
+        token_deposits: &mut LookupMap<AccountId, u128>,
     ) {
-        self.create_payout(balance, owner_id, with_cheddar)
-            .send_funds(cheddar_deposits);
+        self.create_payout(balance, owner_id, token_id)
+            .send_funds(token_deposits);
     }
 }
 
