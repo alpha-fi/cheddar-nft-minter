@@ -78,6 +78,7 @@ impl Contract {
             status: self.get_status(),
             price: self.price(1).into(),
             token_final_supply: self.initial(),
+            tokens_sold: self.counter,
         }
     }
 

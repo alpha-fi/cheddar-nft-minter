@@ -120,6 +120,8 @@ pub struct SaleInfo {
     pub token_final_supply: u64,
     /// Current price for one token
     pub price: U128,
+    /// number of tokens sold
+    pub tokens_sold: u32,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
